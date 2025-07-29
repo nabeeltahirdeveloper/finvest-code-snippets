@@ -147,7 +147,13 @@ function fa_get_brand_commissions($atts){
 		// summary variables
 		$total_order_amount += (float) $usd_amount_order;
 		
-		
+		// Get user IP from commission meta
+		$user_ip = fa_get_commission_user_ip($id);
+		if (empty($user_ip)) {
+			// Fallback to order meta if commission meta doesn't have IP
+			$user_ip = get_post_meta($order_id, 'user_ip', true);
+		}
+		$user_ip = $user_ip ?: 'Unknown';
 
         if (strpos($code, '000.000') === 0 || strpos($code, '000.100.1') === 0) {
             $message = '<span class="success-message">' . esc_html($message) . '</span>';
@@ -181,10 +187,11 @@ function fa_get_brand_commissions($atts){
 		echo '<td class="all">' . esc_html($date) . '</td>';
         echo '<td>' . esc_html($phone) . '</td>';
         echo '<td>#' . esc_html($order_id) . '</td>';
-		echo '<td>' . esc_html($usd_order_amount) . '</td>';
+		        echo '<td>' . esc_html($usd_order_amount) . '</td>';
 		echo '<td>USD ' . esc_html(round($amount, 2)) . '</td>';
 		echo '<td>' . esc_html($rolling_reserve_amount) . '</td>';
         echo '<td class="all"> <span class="transaction-status '.$status.'">' . esc_html($status) . '</span></td>';
+        echo '<td>' . esc_html($user_ip) . '</td>';
         echo '<td>' . $message . '</td>';
 		echo '<td>' . $action . '</td>';
         echo '</tr>';
@@ -243,6 +250,7 @@ function fa_get_brand_commissions($atts){
 	echo '<th>Payout USD</th>';
 	echo '<th>Rolling Reserve</th>';
     echo '<th class="all">Status</th>';
+    echo '<th>User IP</th>';
 //     echo '<th>Payment Currency</th>';
 //     echo '<th>Payment Amount</th>';
     echo '<th>Payment Message</th>';
@@ -281,6 +289,11 @@ function fa_get_slicewp_commission_meta( $commission_id, $meta_key, $single = tr
     $results = array_map( 'maybe_unserialize', $results );
 
     return $single ? $results[0] : $results;
+}
+
+// Helper function to get user IP from commission
+function fa_get_commission_user_ip( $commission_id ) {
+    return fa_get_slicewp_commission_meta( $commission_id, '_user_ip', true );
 }
 
 add_shortcode('my-network', 'fa_get_affilate_subbrands');

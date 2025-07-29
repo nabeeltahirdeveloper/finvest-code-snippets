@@ -1523,7 +1523,45 @@ function after_update_finvest_order($post_id)
         );
 
         if ($updated) {
-            error_log("Commission updated for order #{$post_id}, new affiliate: {$affiliate_id}");
+            // Get user IP address and update commission meta
+            $user_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            
+            // Update or insert IP in commission meta
+            $existing_ip = $wpdb->get_var($wpdb->prepare(
+                "SELECT meta_value FROM {$wpdb->prefix}slicewp_commission_meta 
+                WHERE slicewp_commission_id = %d AND meta_key = '_user_ip'",
+                $existing_commission
+            ));
+            
+            if ($existing_ip) {
+                // Update existing IP
+                $wpdb->update(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    ['meta_value' => $user_ip],
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_user_ip'
+                    ],
+                    ['%s'],
+                    ['%d', '%s']
+                );
+            } else {
+                // Insert new IP
+                $wpdb->insert(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_user_ip',
+                        'meta_value' => $user_ip
+                    ],
+                    ['%d', '%s', '%s']
+                );
+            }
+            
+            // Also update order meta with IP
+            update_post_meta($post_id, 'user_ip', $user_ip);
+            
+            error_log("Commission updated for order #{$post_id}, new affiliate: {$affiliate_id}, IP: {$user_ip}");
         }
         return;
     }
@@ -1663,6 +1701,9 @@ function create_finvest_order_post($order_details)
     ]);
 
     if ($order_id && !is_wp_error($order_id)) {
+        // Get user IP address
+        $user_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        
         // Save all details
         update_post_meta($order_id, 'product_details', $product_details);
         update_post_meta($order_id, 'order_details', $order_details);
@@ -1670,6 +1711,7 @@ function create_finvest_order_post($order_details)
         update_post_meta($order_id, 'finvest_order_status', $payment_status);
         update_post_meta($order_id, 'failure_reason', $failure_reason);
         update_post_meta($order_id, 'transaction_id', $order_details['id'] ?? 'unknown');
+        update_post_meta($order_id, 'user_ip', $user_ip);
 
         // ⭐ FIXED: Auto-detect and store affiliate information for SliceWP tracking
         $affiliate_id = fv_get_active_affiliate_id();
@@ -2790,6 +2832,9 @@ function create_finvest_order_post_fast($order_details)
     ]);
 
     if ($order_id && !is_wp_error($order_id)) {
+        // Get user IP address
+        $user_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        
         // Batch save all meta data in one go
         $meta_data = [
             'product_details' => $product_details,
@@ -2799,6 +2844,7 @@ function create_finvest_order_post_fast($order_details)
             'failure_reason' => $failure_reason,
             'transaction_id' => $order_details['id'] ?? 'unknown',
             'order_created_time' => current_time('mysql'),
+            'user_ip' => $user_ip,
         ];
 
         foreach ($meta_data as $key => $value) {
@@ -2989,6 +3035,8 @@ function fv_auto_create_commission($order_id, $affiliate_id, $payment_status)
         $commission_rate = 0.10; // 10% - adjust as needed
         $commission_amount = $amount * $commission_rate;
 
+        // Get user IP address
+        $user_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
         // Create commission data
         $commission_data = [
@@ -3013,12 +3061,28 @@ function fv_auto_create_commission($order_id, $affiliate_id, $payment_status)
         );
 
         if ($commission_id) {
-            error_log("Commission created successfully for order #{$order_id}, affiliate {$affiliate_id}, status: {$payment_status}, amount: {$commission_amount}");
+            $commission_insert_id = $wpdb->insert_id;
+            
+            // Store IP address in commission meta
+            $wpdb->insert(
+                $wpdb->prefix . 'slicewp_commission_meta',
+                [
+                    'slicewp_commission_id' => $commission_insert_id,
+                    'meta_key' => '_user_ip',
+                    'meta_value' => $user_ip
+                ],
+                ['%d', '%s', '%s']
+            );
+
+            // Also store IP in order meta for reference
+            update_post_meta($order_id, 'user_ip', $user_ip);
+            
+            error_log("Commission created successfully for order #{$order_id}, affiliate {$affiliate_id}, status: {$payment_status}, amount: {$commission_amount}, IP: {$user_ip}");
 
             // Store commission ID in order meta for reference
-            update_post_meta($order_id, 'slicewp_commission_id', $wpdb->insert_id);
+            update_post_meta($order_id, 'slicewp_commission_id', $commission_insert_id);
 
-            return $wpdb->insert_id;
+            return $commission_insert_id;
         } else {
             error_log("Failed to create commission: " . $wpdb->last_error);
             return false;
