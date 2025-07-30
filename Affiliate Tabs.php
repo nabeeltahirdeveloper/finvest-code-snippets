@@ -148,12 +148,20 @@ function fa_get_brand_commissions($atts){
 		$total_order_amount += (float) $usd_amount_order;
 		
 		// Get user IP from commission meta
-		$user_ip = fa_get_commission_user_ip($id);
-		if (empty($user_ip)) {
-			// Fallback to order meta if commission meta doesn't have IP
-			$user_ip = get_post_meta($order_id, 'user_ip', true);
-		}
-		$user_ip = $user_ip ?: 'Unknown';
+		        $user_ip = fa_get_commission_user_ip($id);
+        if (empty($user_ip)) {
+            // Fallback to order meta if commission meta doesn't have IP
+            $user_ip = get_post_meta($order_id, 'user_ip', true);
+        }
+        $user_ip = $user_ip ?: 'Unknown';
+        
+        // Get VPN/Proxy status
+        $vpn_status = fa_get_commission_vpn_status($id);
+        if (empty($vpn_status)) {
+            // Fallback to order meta if commission meta doesn't have VPN status
+            $vpn_status = get_post_meta($order_id, 'vpn_proxy_status', true);
+        }
+        $vpn_status = $vpn_status ?: 'Unknown';
 
         if (strpos($code, '000.000') === 0 || strpos($code, '000.100.1') === 0) {
             $message = '<span class="success-message">' . esc_html($message) . '</span>';
@@ -192,6 +200,7 @@ function fa_get_brand_commissions($atts){
 		echo '<td>' . esc_html($rolling_reserve_amount) . '</td>';
         echo '<td class="all"> <span class="transaction-status '.$status.'">' . esc_html($status) . '</span></td>';
         echo '<td>' . esc_html($user_ip) . '</td>';
+        echo '<td><span class="vpn-status ' . strtolower(str_replace(' ', '-', $vpn_status)) . '">' . esc_html($vpn_status) . '</span></td>';
         echo '<td>' . $message . '</td>';
 		echo '<td>' . $action . '</td>';
         echo '</tr>';
@@ -229,6 +238,13 @@ function fa_get_brand_commissions($atts){
 	
 	echo '</div>';
 	
+	echo '<style>
+	.vpn-status.detected { color: #d63638; font-weight: bold; }
+	.vpn-status.not-detected { color: #00a32a; font-weight: bold; }
+	.vpn-status.unknown, .vpn-status.detection-failed { color: #826135; }
+	.vpn-status.not-detected-local-ip { color: #72777c; font-style: italic; }
+	</style>';
+	
 	echo '<div class="fa-table-wrapp"><div id="filters" style="margin-bottom: 10px;">
   <label>From: <input type="date" id="min-date"></label>
   <label>To: <input type="date" id="max-date"></label>
@@ -251,6 +267,7 @@ function fa_get_brand_commissions($atts){
 	echo '<th>Rolling Reserve</th>';
     echo '<th class="all">Status</th>';
     echo '<th>User IP</th>';
+    echo '<th>VPN/PROXY</th>';
 //     echo '<th>Payment Currency</th>';
 //     echo '<th>Payment Amount</th>';
     echo '<th>Payment Message</th>';
@@ -294,6 +311,17 @@ function fa_get_slicewp_commission_meta( $commission_id, $meta_key, $single = tr
 // Helper function to get user IP from commission
 function fa_get_commission_user_ip( $commission_id ) {
     return fa_get_slicewp_commission_meta( $commission_id, '_user_ip', true );
+}
+
+// Helper function to get VPN/Proxy status from commission
+function fa_get_commission_vpn_status( $commission_id ) {
+    return fa_get_slicewp_commission_meta( $commission_id, '_vpn_proxy_status', true );
+}
+
+// Helper function to get detailed VPN/Proxy data from commission
+function fa_get_commission_vpn_data( $commission_id ) {
+    $data = fa_get_slicewp_commission_meta( $commission_id, '_vpn_proxy_data', true );
+    return $data ? json_decode($data, true) : null;
 }
 
 add_shortcode('my-network', 'fa_get_affilate_subbrands');

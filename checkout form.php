@@ -1558,8 +1558,68 @@ function after_update_finvest_order($post_id)
                 );
             }
             
-            // Also update order meta with IP
+            // Detect and update VPN/Proxy status
+            $vpn_detection = fv_detect_vpn_proxy($user_ip);
+            
+            // Update or insert VPN/Proxy status
+            $existing_vpn_status = $wpdb->get_var($wpdb->prepare(
+                "SELECT meta_value FROM {$wpdb->prefix}slicewp_commission_meta 
+                WHERE slicewp_commission_id = %d AND meta_key = '_vpn_proxy_status'",
+                $existing_commission
+            ));
+            
+            if ($existing_vpn_status) {
+                // Update existing VPN status
+                $wpdb->update(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    ['meta_value' => $vpn_detection['status']],
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_vpn_proxy_status'
+                    ],
+                    ['%s'],
+                    ['%d', '%s']
+                );
+                
+                // Update VPN data
+                $wpdb->update(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    ['meta_value' => json_encode($vpn_detection)],
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_vpn_proxy_data'
+                    ],
+                    ['%s'],
+                    ['%d', '%s']
+                );
+            } else {
+                // Insert new VPN status
+                $wpdb->insert(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_vpn_proxy_status',
+                        'meta_value' => $vpn_detection['status']
+                    ],
+                    ['%d', '%s', '%s']
+                );
+                
+                // Insert VPN data
+                $wpdb->insert(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_vpn_proxy_data',
+                        'meta_value' => json_encode($vpn_detection)
+                    ],
+                    ['%d', '%s', '%s']
+                );
+            }
+            
+            // Also update order meta with IP and VPN/Proxy status
             update_post_meta($post_id, 'user_ip', $user_ip);
+            update_post_meta($post_id, 'vpn_proxy_status', $vpn_detection['status']);
+            update_post_meta($post_id, 'vpn_proxy_data', $vpn_detection);
             
             error_log("Commission updated for order #{$post_id}, new affiliate: {$affiliate_id}, IP: {$user_ip}");
         }
@@ -3074,8 +3134,33 @@ function fv_auto_create_commission($order_id, $affiliate_id, $payment_status)
                 ['%d', '%s', '%s']
             );
 
-            // Also store IP in order meta for reference
+            // Detect and store VPN/Proxy status
+            $vpn_detection = fv_detect_vpn_proxy($user_ip);
+            $wpdb->insert(
+                $wpdb->prefix . 'slicewp_commission_meta',
+                [
+                    'slicewp_commission_id' => $commission_insert_id,
+                    'meta_key' => '_vpn_proxy_status',
+                    'meta_value' => $vpn_detection['status']
+                ],
+                ['%d', '%s', '%s']
+            );
+
+            // Store detailed VPN/Proxy data as JSON
+            $wpdb->insert(
+                $wpdb->prefix . 'slicewp_commission_meta',
+                [
+                    'slicewp_commission_id' => $commission_insert_id,
+                    'meta_key' => '_vpn_proxy_data',
+                    'meta_value' => json_encode($vpn_detection)
+                ],
+                ['%d', '%s', '%s']
+            );
+
+            // Also store IP and VPN/Proxy status in order meta for reference
             update_post_meta($order_id, 'user_ip', $user_ip);
+            update_post_meta($order_id, 'vpn_proxy_status', $vpn_detection['status']);
+            update_post_meta($order_id, 'vpn_proxy_data', $vpn_detection);
             
             error_log("Commission created successfully for order #{$order_id}, affiliate {$affiliate_id}, status: {$payment_status}, amount: {$commission_amount}, IP: {$user_ip}");
 
@@ -3098,6 +3183,79 @@ function fv_auto_create_commission($order_id, $affiliate_id, $payment_status)
 add_action('fv_send_failed_order_email', function ($order_id, $payment_status, $failure_reason) {
     fv_send_order_notification_email($order_id, $payment_status, $failure_reason);
 }, 10, 3);
+
+// Function to detect VPN/Proxy using VPN API
+function fv_detect_vpn_proxy($ip_address) {
+    // Skip detection for local/private IPs
+    if (filter_var($ip_address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+        return [
+            'vpn' => false,
+            'proxy' => false,
+            'status' => 'Not Detected (Local IP)'
+        ];
+    }
+    
+    $api_key = '2867120f50374c63bb98e7dce24b0b83';
+    $api_url = "https://vpnapi.io/api/{$ip_address}?key={$api_key}";
+    
+    // Use wp_remote_get for WordPress compatibility
+    $response = wp_remote_get($api_url, [
+        'timeout' => 10,
+        'headers' => [
+            'User-Agent' => 'WordPress VPN Detection'
+        ]
+    ]);
+    
+    // Handle API errors
+    if (is_wp_error($response)) {
+        error_log('VPN API Error: ' . $response->get_error_message());
+        return [
+            'vpn' => false,
+            'proxy' => false,
+            'status' => 'Detection Failed'
+        ];
+    }
+    
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+    
+    // Handle JSON decode errors
+    if (json_last_error() !== JSON_ERROR_NONE || !$data) {
+        error_log('VPN API JSON Error: ' . json_last_error_msg());
+        return [
+            'vpn' => false,
+            'proxy' => false,
+            'status' => 'Detection Failed'
+        ];
+    }
+    
+    // Check if API returned security data
+    if (isset($data['security'])) {
+        $security = $data['security'];
+        $is_vpn = $security['vpn'] ?? false;
+        $is_proxy = $security['proxy'] ?? false;
+        $is_tor = $security['tor'] ?? false;
+        $is_relay = $security['relay'] ?? false;
+        
+        // Consider VPN/Proxy detected if any security flag is true
+        $detected = $is_vpn || $is_proxy || $is_tor || $is_relay;
+        
+        return [
+            'vpn' => $is_vpn,
+            'proxy' => $is_proxy,
+            'tor' => $is_tor,
+            'relay' => $is_relay,
+            'status' => $detected ? 'Detected' : 'Not Detected'
+        ];
+    }
+    
+    // Default response if no security data
+    return [
+        'vpn' => false,
+        'proxy' => false,
+        'status' => 'Detection Failed'
+    ];
+}
 
 // Performance monitoring and admin notice
 add_action('admin_notices', function () {
