@@ -1561,6 +1561,9 @@ function after_update_finvest_order($post_id)
             // Detect and update VPN/Proxy status
             $vpn_detection = fv_detect_vpn_proxy($user_ip);
             
+            // Debug log to check what we're storing
+            error_log("VPN Detection Data for IP {$user_ip} (commission update): " . json_encode($vpn_detection));
+            
             // Update or insert VPN/Proxy status
             $existing_vpn_status = $wpdb->get_var($wpdb->prepare(
                 "SELECT meta_value FROM {$wpdb->prefix}slicewp_commission_meta 
@@ -3136,6 +3139,10 @@ function fv_auto_create_commission($order_id, $affiliate_id, $payment_status)
 
             // Detect and store VPN/Proxy status
             $vpn_detection = fv_detect_vpn_proxy($user_ip);
+            
+            // Debug log to check what we're storing
+            error_log("VPN Detection Data for IP {$user_ip}: " . json_encode($vpn_detection));
+            
             $wpdb->insert(
                 $wpdb->prefix . 'slicewp_commission_meta',
                 [
@@ -3191,7 +3198,16 @@ function fv_detect_vpn_proxy($ip_address) {
         return [
             'vpn' => false,
             'proxy' => false,
-            'status' => 'Not Detected (Local IP)'
+            'tor' => false,
+            'relay' => false,
+            'status' => 'Not Detected (Local IP)',
+            'location' => [
+                'country' => 'Local Network',
+                'country_code' => '',
+                'city' => 'Local',
+                'region' => 'Local'
+            ],
+            'ip' => $ip_address
         ];
     }
     
@@ -3212,7 +3228,16 @@ function fv_detect_vpn_proxy($ip_address) {
         return [
             'vpn' => false,
             'proxy' => false,
-            'status' => 'Detection Failed'
+            'tor' => false,
+            'relay' => false,
+            'status' => 'Detection Failed',
+            'location' => [
+                'country' => 'Detection Failed',
+                'country_code' => '',
+                'city' => 'Unknown',
+                'region' => 'Unknown'
+            ],
+            'ip' => $ip_address
         ];
     }
     
@@ -3225,7 +3250,16 @@ function fv_detect_vpn_proxy($ip_address) {
         return [
             'vpn' => false,
             'proxy' => false,
-            'status' => 'Detection Failed'
+            'tor' => false,
+            'relay' => false,
+            'status' => 'Detection Failed',
+            'location' => [
+                'country' => 'Detection Failed',
+                'country_code' => '',
+                'city' => 'Unknown',
+                'region' => 'Unknown'
+            ],
+            'ip' => $ip_address
         ];
     }
     
@@ -3240,12 +3274,22 @@ function fv_detect_vpn_proxy($ip_address) {
         // Consider VPN/Proxy detected if any security flag is true
         $detected = $is_vpn || $is_proxy || $is_tor || $is_relay;
         
+        // Extract location data
+        $location = $data['location'] ?? [];
+        
         return [
             'vpn' => $is_vpn,
             'proxy' => $is_proxy,
             'tor' => $is_tor,
             'relay' => $is_relay,
-            'status' => $detected ? 'Detected' : 'Not Detected'
+            'status' => $detected ? 'Detected' : 'Not Detected',
+            'location' => [
+                'country' => $location['country'] ?? 'Unknown',
+                'country_code' => $location['country_code'] ?? '',
+                'city' => $location['city'] ?? 'Unknown',
+                'region' => $location['region'] ?? 'Unknown'
+            ],
+            'ip' => $data['ip'] ?? $ip_address
         ];
     }
     
@@ -3253,7 +3297,16 @@ function fv_detect_vpn_proxy($ip_address) {
     return [
         'vpn' => false,
         'proxy' => false,
-        'status' => 'Detection Failed'
+        'tor' => false,
+        'relay' => false,
+        'status' => 'Detection Failed',
+        'location' => [
+            'country' => 'Unknown',
+            'country_code' => '',
+            'city' => 'Unknown',
+            'region' => 'Unknown'
+        ],
+        'ip' => $ip_address
     ];
 }
 

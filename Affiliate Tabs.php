@@ -162,6 +162,29 @@ function fa_get_brand_commissions($atts){
             $vpn_status = get_post_meta($order_id, 'vpn_proxy_status', true);
         }
         $vpn_status = $vpn_status ?: 'Unknown';
+        
+        // Get VPN/Proxy geographic location (country)
+        $vpn_geo = 'Unknown';
+        $vpn_data = fa_get_commission_vpn_data($id);
+        if (empty($vpn_data)) {
+            // Fallback to order meta if commission meta doesn't have VPN data
+            $vpn_data = get_post_meta($order_id, 'vpn_proxy_data', true);
+        }
+        
+        // Debug log to check what data we're retrieving
+        error_log("Commission ID {$id}: VPN Status = {$vpn_status}, VPN Data = " . json_encode($vpn_data));
+        
+        if (!empty($vpn_data) && isset($vpn_data['location']['country'])) {
+            $vpn_geo = $vpn_data['location']['country'];
+            // Also include country code for clarity
+            if (isset($vpn_data['location']['country_code'])) {
+                $vpn_geo .= ' (' . $vpn_data['location']['country_code'] . ')';
+            }
+        } elseif ($vpn_status === 'Not Detected (Local IP)') {
+            $vpn_geo = 'Local Network';
+        } elseif ($vpn_status === 'Detection Failed') {
+            $vpn_geo = 'Detection Failed';
+        }
 
         if (strpos($code, '000.000') === 0 || strpos($code, '000.100.1') === 0) {
             $message = '<span class="success-message">' . esc_html($message) . '</span>';
@@ -201,6 +224,7 @@ function fa_get_brand_commissions($atts){
         echo '<td class="all"> <span class="transaction-status '.$status.'">' . esc_html($status) . '</span></td>';
         echo '<td>' . esc_html($user_ip) . '</td>';
         echo '<td><span class="vpn-status ' . strtolower(str_replace(' ', '-', $vpn_status)) . '">' . esc_html($vpn_status) . '</span></td>';
+        echo '<td><span class="vpn-geo">' . esc_html($vpn_geo) . '</span></td>';
         echo '<td>' . $message . '</td>';
 		echo '<td>' . $action . '</td>';
         echo '</tr>';
@@ -243,6 +267,7 @@ function fa_get_brand_commissions($atts){
 	.vpn-status.not-detected { color: #00a32a; font-weight: bold; }
 	.vpn-status.unknown, .vpn-status.detection-failed { color: #826135; }
 	.vpn-status.not-detected-local-ip { color: #72777c; font-style: italic; }
+	.vpn-geo { color: #2271b1; font-weight: 500; }
 	</style>';
 	
 	echo '<div class="fa-table-wrapp"><div id="filters" style="margin-bottom: 10px;">
@@ -268,6 +293,7 @@ function fa_get_brand_commissions($atts){
     echo '<th class="all">Status</th>';
     echo '<th>User IP</th>';
     echo '<th>VPN/PROXY</th>';
+    echo '<th>VPN PROXY GEO</th>';
 //     echo '<th>Payment Currency</th>';
 //     echo '<th>Payment Amount</th>';
     echo '<th>Payment Message</th>';
