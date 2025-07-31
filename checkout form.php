@@ -495,6 +495,93 @@ add_shortcode('fv-billing-details-form', function () {
                             });
                         }
 
+                        // Payment form validation for card holder name
+                        function showPaymentError(message, inputField) {
+                            // Remove any existing error messages
+                            var existingError = document.querySelector('.fv-payment-error');
+                            if (existingError) {
+                                existingError.remove();
+                            }
+                            
+                            // Create error banner
+                            var errorDiv = document.createElement('div');
+                            errorDiv.className = 'fv-payment-error';
+                            errorDiv.innerHTML = '<span class="error-icon">⚠️</span> ' + message;
+                            
+                            // Add red border to the input field
+                            inputField.style.borderColor = '#d32f2f';
+                            inputField.style.borderWidth = '2px';
+                            
+                            // Insert error message after the input field
+                            var parentContainer = inputField.parentNode;
+                            if (parentContainer) {
+                                parentContainer.insertBefore(errorDiv, inputField.nextSibling);
+                            }
+                            
+                            // Focus on the problematic field
+                            inputField.focus();
+                            
+                            // Auto-remove error when user starts typing
+                            var removeErrorHandler = function() {
+                                if (errorDiv && errorDiv.parentNode) {
+                                    errorDiv.remove();
+                                }
+                                inputField.style.borderColor = '';
+                                inputField.style.borderWidth = '';
+                                inputField.removeEventListener('input', removeErrorHandler);
+                            };
+                            inputField.addEventListener('input', removeErrorHandler);
+                        }
+
+                        function addPaymentValidation() {
+                            var paymentButton = document.querySelector('.wpwl-button.wpwl-button-pay');
+                            
+                            if (paymentButton) {
+                                paymentButton.addEventListener('click', function(e) {
+                                    // Get the card holder input field
+                                    var cardHolderInput = document.querySelector('.wpwl-control.wpwl-control-cardHolder');
+                                    
+                                    if (cardHolderInput) {
+                                        // Check if card holder name is empty (after trimming whitespace)
+                                        var cardHolderValue = cardHolderInput.value.trim();
+                                        
+                                        if (!cardHolderValue) {
+                                            showPaymentError('Name is missing', cardHolderInput);
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            return false;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+
+                        // Add payment validation on page load
+                        addPaymentValidation();
+
+                        // Also check for dynamically loaded payment forms
+                        var observer = new MutationObserver(function(mutations) {
+                            mutations.forEach(function(mutation) {
+                                if (mutation.type === 'childList') {
+                                    mutation.addedNodes.forEach(function(node) {
+                                        if (node.nodeType === 1) { // Element node
+                                            // Check if payment button was added
+                                            if (node.classList && node.classList.contains('wpwl-button-pay') ||
+                                                node.querySelector && node.querySelector('.wpwl-button.wpwl-button-pay')) {
+                                                addPaymentValidation();
+                                            }
+                                        }
+                                    });
+                                }
+                            });
+                        });
+
+                        // Start observing for dynamically added content
+                        observer.observe(document.body, {
+                            childList: true,
+                            subtree: true
+                        });
+
                     });
                 </script>
 
@@ -526,6 +613,37 @@ add_shortcode('fv-billing-details-form', function () {
                         padding: 10px;
                         border-radius: 4px;
                         margin: 10px 0;
+                    }
+
+                    .fv-payment-error {
+                        background: #ffebee;
+                        color: #d32f2f;
+                        padding: 8px 12px;
+                        border-radius: 4px;
+                        border-left: 4px solid #d32f2f;
+                        margin-top: 8px;
+                        font-size: 14px;
+                        font-weight: 500;
+                        display: flex;
+                        align-items: center;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        animation: slideInDown 0.3s ease-out;
+                    }
+
+                    .fv-payment-error .error-icon {
+                        margin-right: 8px;
+                        font-size: 16px;
+                    }
+
+                    @keyframes slideInDown {
+                        from {
+                            opacity: 0;
+                            transform: translateY(-10px);
+                        }
+                        to {
+                            opacity: 1;
+                            transform: translateY(0);
+                        }
                     }
 
                     .loader {
