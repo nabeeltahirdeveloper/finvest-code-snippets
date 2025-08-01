@@ -551,6 +551,15 @@ add_shortcode('fv-billing-details-form', function () {
                                             e.stopPropagation();
                                             return false;
                                         }
+                                        
+                                        // Check if name contains only letters and spaces
+                                        var nameRegex = /^[A-Za-z\s]+$/;
+                                        if (!nameRegex.test(cardHolderValue)) {
+                                            showPaymentError('Name should only contain letters and spaces', cardHolderInput);
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            return false;
+                                        }
                                     }
                                 });
                             }
