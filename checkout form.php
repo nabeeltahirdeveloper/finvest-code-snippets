@@ -1746,6 +1746,64 @@ function after_update_finvest_order($post_id)
                 );
             }
             
+            // Store card BIN data in commission meta
+            $card_bin = get_post_meta($post_id, 'card_bin', true) ?: 'Unknown';
+            $card_bin_info = get_post_meta($post_id, 'card_bin_info', true) ?: '{}';
+            
+            $existing_bin = $wpdb->get_var($wpdb->prepare(
+                "SELECT meta_value FROM {$wpdb->prefix}slicewp_commission_meta 
+                WHERE slicewp_commission_id = %d AND meta_key = '_card_bin'",
+                $existing_commission
+            ));
+            
+            if ($existing_bin) {
+                // Update existing BIN
+                $wpdb->update(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    ['meta_value' => $card_bin],
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_card_bin'
+                    ],
+                    ['%s'],
+                    ['%d', '%s']
+                );
+                
+                // Update BIN info
+                $wpdb->update(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    ['meta_value' => $card_bin_info],
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_card_bin_info'
+                    ],
+                    ['%s'],
+                    ['%d', '%s']
+                );
+            } else {
+                // Insert new BIN
+                $wpdb->insert(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_card_bin',
+                        'meta_value' => $card_bin
+                    ],
+                    ['%d', '%s', '%s']
+                );
+                
+                // Insert BIN info
+                $wpdb->insert(
+                    $wpdb->prefix . 'slicewp_commission_meta',
+                    [
+                        'slicewp_commission_id' => $existing_commission,
+                        'meta_key' => '_card_bin_info',
+                        'meta_value' => $card_bin_info
+                    ],
+                    ['%d', '%s', '%s']
+                );
+            }
+            
             // Also update order meta with IP and VPN/Proxy status
             update_post_meta($post_id, 'user_ip', $user_ip);
             update_post_meta($post_id, 'vpn_proxy_status', $vpn_detection['status']);
@@ -3025,6 +3083,9 @@ function create_finvest_order_post_fast($order_details)
         // Get user IP address
         $user_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         
+        // Extract card BIN and lookup bank information
+        $bin_info = fv_extract_card_bin_with_bank_info($order_details);
+        
         // Batch save all meta data in one go
         $meta_data = [
             'product_details' => $product_details,
@@ -3035,6 +3096,8 @@ function create_finvest_order_post_fast($order_details)
             'transaction_id' => $order_details['id'] ?? 'unknown',
             'order_created_time' => current_time('mysql'),
             'user_ip' => $user_ip,
+            'card_bin' => $bin_info['bin'],
+            'card_bin_info' => json_encode($bin_info),
         ];
 
         foreach ($meta_data as $key => $value) {
@@ -3291,6 +3354,31 @@ function fv_auto_create_commission($order_id, $affiliate_id, $payment_status)
                 ['%d', '%s', '%s']
             );
 
+            // Store card BIN data in commission meta
+            $card_bin = get_post_meta($order_id, 'card_bin', true) ?: 'Unknown';
+            $card_bin_info = get_post_meta($order_id, 'card_bin_info', true) ?: '{}';
+            
+            $wpdb->insert(
+                $wpdb->prefix . 'slicewp_commission_meta',
+                [
+                    'slicewp_commission_id' => $commission_insert_id,
+                    'meta_key' => '_card_bin',
+                    'meta_value' => $card_bin
+                ],
+                ['%d', '%s', '%s']
+            );
+            
+            // Store detailed BIN information as JSON
+            $wpdb->insert(
+                $wpdb->prefix . 'slicewp_commission_meta',
+                [
+                    'slicewp_commission_id' => $commission_insert_id,
+                    'meta_key' => '_card_bin_info',
+                    'meta_value' => $card_bin_info
+                ],
+                ['%d', '%s', '%s']
+            );
+
             // Also store IP and VPN/Proxy status in order meta for reference
             update_post_meta($order_id, 'user_ip', $user_ip);
             update_post_meta($order_id, 'vpn_proxy_status', $vpn_detection['status']);
@@ -3317,6 +3405,132 @@ function fv_auto_create_commission($order_id, $affiliate_id, $payment_status)
 add_action('fv_send_failed_order_email', function ($order_id, $payment_status, $failure_reason) {
     fv_send_order_notification_email($order_id, $payment_status, $failure_reason);
 }, 10, 3);
+
+// Function to lookup BIN information using bincodes.com API
+function fv_lookup_bin_info($bin) {
+    // Skip lookup for invalid BINs
+    if (!$bin || $bin === 'Unknown' || !preg_match('/^\d{6}$/', $bin)) {
+        return [
+            'bin' => $bin,
+            'bank' => 'Unknown',
+            'card' => 'Unknown',
+            'type' => 'Unknown',
+            'country' => 'Unknown',
+            'countrycode' => 'Unknown',
+            'valid' => 'false'
+        ];
+    }
+    
+    // API configuration - you should add your API key here
+    $api_key = 'f55bd49d83b6a0fc9f45aca665b716a9'; // Replace with your actual API key
+    $api_url = "https://api.bincodes.com/bin/json/{$api_key}/{$bin}/";
+    
+    // Make API request
+    $response = wp_remote_get($api_url, [
+        'timeout' => 10,
+        'headers' => [
+            'User-Agent' => 'WordPress BIN Lookup'
+        ]
+    ]);
+    
+    // Handle API errors
+    if (is_wp_error($response)) {
+        error_log('BIN API Error: ' . $response->get_error_message());
+        return [
+            'bin' => $bin,
+            'bank' => 'API Error',
+            'card' => 'Unknown',
+            'type' => 'Unknown',
+            'country' => 'Unknown',
+            'countrycode' => 'Unknown',
+            'valid' => 'false'
+        ];
+    }
+    
+    $body = wp_remote_retrieve_body($response);
+    $http_code = wp_remote_retrieve_response_code($response);
+    
+    if ($http_code !== 200) {
+        error_log("BIN API HTTP Error: {$http_code}");
+        return [
+            'bin' => $bin,
+            'bank' => 'API Error',
+            'card' => 'Unknown',
+            'type' => 'Unknown',
+            'country' => 'Unknown',
+            'countrycode' => 'Unknown',
+            'valid' => 'false'
+        ];
+    }
+    
+    // Parse JSON response
+    $bin_data = json_decode($body, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        error_log('BIN API JSON Error: ' . json_last_error_msg());
+        return [
+            'bin' => $bin,
+            'bank' => 'Parse Error',
+            'card' => 'Unknown',
+            'type' => 'Unknown',
+            'country' => 'Unknown',
+            'countrycode' => 'Unknown',
+            'valid' => 'false'
+        ];
+    }
+    
+    // Return formatted data with defaults
+    return [
+        'bin' => $bin_data['bin'] ?? $bin,
+        'bank' => $bin_data['bank'] ?? 'Unknown',
+        'card' => $bin_data['card'] ?? 'Unknown',
+        'type' => $bin_data['type'] ?? 'Unknown',
+        'country' => $bin_data['country'] ?? 'Unknown',
+        'countrycode' => $bin_data['countrycode'] ?? 'Unknown',
+        'valid' => $bin_data['valid'] ?? 'false'
+    ];
+}
+
+// Function to extract card BIN (first 6 digits) from payment response
+function fv_extract_card_bin($payment_data) {
+    // Try to get BIN from different possible locations in payment response
+    $bin = '';
+    
+    // Method 1: From card object
+    if (!empty($payment_data['card']['bin'])) {
+        $bin = $payment_data['card']['bin'];
+    }
+    // Method 2: From payment brand and card details  
+    elseif (!empty($payment_data['paymentBrand']) && !empty($payment_data['card']['number'])) {
+        $card_number = preg_replace('/\D/', '', $payment_data['card']['number']);
+        if (strlen($card_number) >= 6) {
+            $bin = substr($card_number, 0, 6);
+        }
+    }
+    // Method 3: From customParameters
+    elseif (!empty($payment_data['customParameters']['SHOPPER_card_bin'])) {
+        $bin = $payment_data['customParameters']['SHOPPER_card_bin'];
+    }
+    // Method 4: From result data
+    elseif (!empty($payment_data['result']['cardBin'])) {
+        $bin = $payment_data['result']['cardBin'];
+    }
+    
+    // Validate BIN (should be exactly 6 digits)
+    if ($bin && preg_match('/^\d{6}$/', $bin)) {
+        return $bin;
+    }
+    
+    return 'Unknown';
+}
+
+// Function to extract card BIN and lookup bank information
+function fv_extract_card_bin_with_bank_info($payment_data) {
+    $bin = fv_extract_card_bin($payment_data);
+    $bin_info = fv_lookup_bin_info($bin);
+    
+    return $bin_info;
+}
 
 // Function to detect VPN/Proxy using VPN API
 function fv_detect_vpn_proxy($ip_address) {

@@ -185,6 +185,32 @@ function fa_get_brand_commissions($atts){
         } elseif ($vpn_status === 'Detection Failed') {
             $vpn_geo = 'Detection Failed';
         }
+        
+        // Get card BIN and bank information
+        $card_bin = fa_get_commission_card_bin($id);
+        $card_bin_info = fa_get_commission_card_bin_info($id);
+        
+        if (empty($card_bin)) {
+            // Fallback to order meta if commission meta doesn't have BIN
+            $card_bin = get_post_meta($order_id, 'card_bin', true);
+        }
+        
+        if (empty($card_bin_info)) {
+            // Fallback to order meta if commission meta doesn't have BIN info
+            $bin_info_json = get_post_meta($order_id, 'card_bin_info', true);
+            $card_bin_info = $bin_info_json ? json_decode($bin_info_json, true) : null;
+        }
+        
+        $card_bin = $card_bin ?: 'Unknown';
+        $bank_name = 'Unknown';
+        
+        if (!empty($card_bin_info) && isset($card_bin_info['bank'])) {
+            $bank_name = $card_bin_info['bank'];
+            // Truncate long bank names for display
+            if (strlen($bank_name) > 25) {
+                $bank_name = substr($bank_name, 0, 25) . '...';
+            }
+        }
 
         if (strpos($code, '000.000') === 0 || strpos($code, '000.100.1') === 0) {
             $message = '<span class="success-message">' . esc_html($message) . '</span>';
@@ -225,6 +251,7 @@ function fa_get_brand_commissions($atts){
         echo '<td>' . esc_html($user_ip) . '</td>';
         echo '<td><span class="vpn-status ' . strtolower(str_replace(' ', '-', $vpn_status)) . '">' . esc_html($vpn_status) . '</span></td>';
         echo '<td><span class="vpn-geo">' . esc_html($vpn_geo) . '</span></td>';
+        echo '<td><span class="card-bin">' . esc_html($card_bin) . '</span><br><small class="bank-name">' . esc_html($bank_name) . '</small></td>';
         echo '<td>' . $message . '</td>';
 		echo '<td>' . $action . '</td>';
         echo '</tr>';
@@ -264,10 +291,12 @@ function fa_get_brand_commissions($atts){
 	
 	echo '<style>
 	.vpn-status.detected { color: #d63638; font-weight: bold; }
-	.vpn-status.not-detected { color: #00a32a; font-weight: bold; }
-	.vpn-status.unknown, .vpn-status.detection-failed { color: #826135; }
-	.vpn-status.not-detected-local-ip { color: #72777c; font-style: italic; }
-	.vpn-geo { color: #2271b1; font-weight: 500; }
+.vpn-status.not-detected { color: #00a32a; font-weight: bold; }
+.vpn-status.unknown, .vpn-status.detection-failed { color: #826135; }
+.vpn-status.not-detected-local-ip { color: #72777c; font-style: italic; }
+.vpn-geo { color: #2271b1; font-weight: 500; }
+.card-bin { color: #50575e; font-weight: 600; font-family: monospace; }
+.bank-name { color: #2271b1; font-weight: 400; font-style: italic; font-size: 11px; }
 	</style>';
 	
 	echo '<div class="fa-table-wrapp"><div id="filters" style="margin-bottom: 10px;">
@@ -294,6 +323,7 @@ function fa_get_brand_commissions($atts){
     echo '<th>User IP</th>';
     echo '<th>VPN/PROXY</th>';
     echo '<th>VPN PROXY GEO</th>';
+    echo '<th>CARD BIN</th>';
 //     echo '<th>Payment Currency</th>';
 //     echo '<th>Payment Amount</th>';
     echo '<th>Payment Message</th>';
@@ -347,6 +377,17 @@ function fa_get_commission_vpn_status( $commission_id ) {
 // Helper function to get detailed VPN/Proxy data from commission
 function fa_get_commission_vpn_data( $commission_id ) {
     $data = fa_get_slicewp_commission_meta( $commission_id, '_vpn_proxy_data', true );
+    return $data ? json_decode($data, true) : null;
+}
+
+// Helper function to get card BIN from commission
+function fa_get_commission_card_bin( $commission_id ) {
+    return fa_get_slicewp_commission_meta( $commission_id, '_card_bin', true );
+}
+
+// Helper function to get detailed card BIN information from commission
+function fa_get_commission_card_bin_info( $commission_id ) {
+    $data = fa_get_slicewp_commission_meta( $commission_id, '_card_bin_info', true );
     return $data ? json_decode($data, true) : null;
 }
 
