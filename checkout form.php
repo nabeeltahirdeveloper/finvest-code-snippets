@@ -3651,6 +3651,443 @@ function fv_detect_vpn_proxy($ip_address) {
     ];
 }
 
+// Add "Add Manual Order" button to the orders listing page
+add_action('admin_head', 'fv_add_manual_order_button_script');
+function fv_add_manual_order_button_script() {
+    $screen = get_current_screen();
+    if ($screen && $screen->post_type === 'finvest-order' && $screen->base === 'edit') {
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            // Add the "Add Manual Order" button next to "Add New"
+            $('.page-title-action').after('<a href="#" id="add-manual-order-btn" class="page-title-action" style="margin-left: 10px; background: #2271b1; color: white;">Add Manual Order</a>');
+            
+            // Handle button click
+            $('#add-manual-order-btn').on('click', function(e) {
+                e.preventDefault();
+                $('#manual-order-modal').show();
+            });
+            
+            // Handle modal close
+            $('.modal-close, .modal-overlay').on('click', function() {
+                $('#manual-order-modal').hide();
+            });
+            
+            // Prevent modal close when clicking inside modal content
+            $('.modal-content').on('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+        </script>
+        
+        <style>
+        .manual-order-modal {
+            display: none;
+            position: fixed;
+            z-index: 100000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 600px;
+            border-radius: 5px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .modal-close:hover {
+            color: black;
+        }
+        .form-row {
+            margin-bottom: 15px;
+        }
+        .form-row label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-row input, .form-row select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        .form-row.half {
+            width: 48%;
+            display: inline-block;
+            margin-right: 2%;
+        }
+        .submit-manual-order {
+            background: #2271b1;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .submit-manual-order:hover {
+            background: #135e96;
+        }
+        </style>
+        <?php
+    }
+}
+
+// Add the manual order modal HTML
+add_action('admin_footer', 'fv_add_manual_order_modal');
+function fv_add_manual_order_modal() {
+    $screen = get_current_screen();
+    if ($screen && $screen->post_type === 'finvest-order' && $screen->base === 'edit') {
+        ?>
+        <div id="manual-order-modal" class="manual-order-modal modal-overlay">
+            <div class="modal-content">
+                <span class="modal-close">&times;</span>
+                <h2>Add Manual Order</h2>
+                <form id="manual-order-form" method="post">
+                    <?php wp_nonce_field('create_manual_order', 'manual_order_nonce'); ?>
+                    <input type="hidden" name="action" value="create_manual_order">
+                    
+                    <h3>Customer Information</h3>
+                    <div class="form-row half">
+                        <label for="first_name">First Name *</label>
+                        <input type="text" id="first_name" name="first_name" required>
+                    </div>
+                    <div class="form-row half">
+                        <label for="last_name">Last Name *</label>
+                        <input type="text" id="last_name" name="last_name" required>
+                    </div>
+                    <div class="form-row">
+                        <label for="email">Email *</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <div class="form-row">
+                        <label for="phone">Phone</label>
+                        <input type="tel" id="phone" name="phone">
+                    </div>
+                    
+                    <h3>Billing Address</h3>
+                    <div class="form-row">
+                        <label for="street_address1">Street Address</label>
+                        <input type="text" id="street_address1" name="street_address1">
+                    </div>
+                    <div class="form-row half">
+                        <label for="city">City</label>
+                        <input type="text" id="city" name="city">
+                    </div>
+                    <div class="form-row half">
+                        <label for="postcode">Postal Code</label>
+                        <input type="text" id="postcode" name="postcode">
+                    </div>
+                    <div class="form-row">
+                        <label for="country">Country</label>
+                        <select id="country" name="country">
+                            <option value="us">United States</option>
+                            <option value="gb">United Kingdom</option>
+                            <option value="ca">Canada</option>
+                            <option value="au">Australia</option>
+                            <option value="de">Germany</option>
+                            <option value="fr">France</option>
+                            <option value="it">Italy</option>
+                            <option value="es">Spain</option>
+                            <option value="nl">Netherlands</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <h3>Order Details</h3>
+                    <div class="form-row">
+                        <label for="product_id">Product</label>
+                        <select id="product_id" name="product_id">
+                            <?php
+                            // Get available products
+                            $products = get_posts(array(
+                                'post_type' => 'product',
+                                'posts_per_page' => -1,
+                                'post_status' => 'publish'
+                            ));
+                            if (empty($products)) {
+                                // Fallback if no products found
+                                echo '<option value="1790">Default Product</option>';
+                            } else {
+                                foreach ($products as $product) {
+                                    $price = get_post_meta($product->ID, 'finvest_price', true) ?: '97.00';
+                                    echo '<option value="' . $product->ID . '">' . esc_html($product->post_title) . ' ($' . $price . ')</option>';
+                                }
+                            }
+                            ?>
+                        </select>
+                    </div>
+                    <div class="form-row half">
+                        <label for="amount">Amount *</label>
+                        <input type="number" id="amount" name="amount" step="0.01" value="97.00" required>
+                    </div>
+                    <div class="form-row half">
+                        <label for="currency">Currency</label>
+                        <select id="currency" name="currency">
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                            <option value="CAD">CAD</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="payment_status">Payment Status</label>
+                        <select id="payment_status" name="payment_status">
+                            <option value="Approved">Approved</option>
+                            <option value="Payment Declined">Payment Declined</option>
+                            <option value="Processing Error">Processing Error</option>
+                            <option value="Manual Order">Manual Order</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="transaction_id">Transaction ID</label>
+                        <input type="text" id="transaction_id" name="transaction_id" placeholder="Leave empty for auto-generation">
+                    </div>
+                    <div class="form-row">
+                        <label for="affiliate_id">Affiliate (Optional)</label>
+                        <select id="affiliate_id" name="affiliate_id">
+                            <option value="">No Affiliate</option>
+                            <?php
+                            global $wpdb;
+                            $affiliates = $wpdb->get_results("SELECT id, user_id FROM {$wpdb->prefix}slicewp_affiliates WHERE status = 'active'");
+                            foreach ($affiliates as $affiliate) {
+                                $user = get_user_by('id', $affiliate->user_id);
+                                if ($user) {
+                                    echo '<option value="' . $affiliate->id . '">' . esc_html($user->display_name) . ' (ID: ' . $affiliate->id . ')</option>';
+                                }
+                            }
+                            ?>
+                        </select>
+                    </div>
+                    
+                    <div class="form-row">
+                        <button type="submit" class="submit-manual-order">Create Manual Order</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <?php
+    }
+}
+
+// Handle manual order creation form submission
+add_action('admin_init', 'fv_handle_manual_order_creation');
+function fv_handle_manual_order_creation() {
+    if (isset($_POST['action']) && $_POST['action'] === 'create_manual_order') {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['manual_order_nonce'], 'create_manual_order')) {
+            wp_die('Security check failed');
+        }
+        
+        // Check permissions
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        
+        // Sanitize and validate input data
+        $first_name = sanitize_text_field($_POST['first_name']);
+        $last_name = sanitize_text_field($_POST['last_name']);
+        $email = sanitize_email($_POST['email']);
+        $phone = sanitize_text_field($_POST['phone']);
+        $street_address1 = sanitize_text_field($_POST['street_address1']);
+        $city = sanitize_text_field($_POST['city']);
+        $postcode = sanitize_text_field($_POST['postcode']);
+        $country = sanitize_text_field($_POST['country']);
+        $product_id = intval($_POST['product_id']);
+        $amount = floatval($_POST['amount']);
+        $currency = sanitize_text_field($_POST['currency']);
+        $payment_status = sanitize_text_field($_POST['payment_status']);
+        $transaction_id = sanitize_text_field($_POST['transaction_id']);
+        $affiliate_id = !empty($_POST['affiliate_id']) ? intval($_POST['affiliate_id']) : null;
+        
+        // Validate required fields
+        if (empty($first_name) || empty($last_name) || empty($email) || $amount <= 0) {
+            add_action('admin_notices', function() {
+                echo '<div class="notice notice-error is-dismissible"><p>Error: Please fill in all required fields with valid data.</p></div>';
+            });
+            return;
+        }
+        
+        // Generate transaction ID if not provided
+        if (empty($transaction_id)) {
+            $transaction_id = 'MANUAL_' . time() . '_' . wp_rand(1000, 9999);
+        }
+        
+        // Prepare billing details
+        $billing_details = [
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'email' => $email,
+            'phone' => $phone,
+            'street_address1' => $street_address1,
+            'city' => $city,
+            'postcode' => $postcode,
+            'country' => $country,
+            'product_id' => $product_id
+        ];
+        
+        // Get product details
+        $product_title = 'Manual Order Product';
+        $product_price = $amount;
+        if ($product_id && get_post($product_id)) {
+            $product_title = get_the_title($product_id);
+            $stored_price = get_post_meta($product_id, 'finvest_price', true);
+            if ($stored_price) {
+                $product_price = $stored_price;
+            }
+        }
+        
+        $product_details = [
+            'id' => $product_id,
+            'title' => $product_title,
+            'price' => $product_price
+        ];
+        
+        // Prepare order details (simulating payment gateway response)
+        $order_details = [
+            'id' => $transaction_id,
+            'amount' => number_format($amount, 2, '.', ''),
+            'currency' => $currency,
+            'result' => [
+                'code' => $payment_status === 'Approved' ? '000.000.000' : '100.550.300',
+                'description' => 'Manual order creation - ' . $payment_status
+            ],
+            'timestamp' => current_time('mysql'),
+            'customer' => [
+                'givenName' => $first_name,
+                'surname' => $last_name,
+                'email' => $email,
+                'phone' => $phone
+            ],
+            'billing' => [
+                'street1' => $street_address1,
+                'city' => $city,
+                'postcode' => $postcode,
+                'country' => $country
+            ]
+        ];
+        
+        // Create the order using the existing fast creation function
+        $order_id = fv_create_manual_order($order_details, $billing_details, $product_details, $affiliate_id);
+        
+        if ($order_id) {
+            // Success - redirect to the created order
+            wp_redirect(admin_url('post.php?post=' . $order_id . '&action=edit&manual_order_created=1'));
+            exit;
+        } else {
+            // Error
+            add_action('admin_notices', function() {
+                echo '<div class="notice notice-error is-dismissible"><p>Error: Failed to create manual order. Please try again.</p></div>';
+            });
+        }
+    }
+}
+
+// Custom function for creating manual orders
+function fv_create_manual_order($order_details, $billing_details, $product_details, $affiliate_id = null) {
+    global $wpdb;
+    
+    // Get next order number
+    $last_id = $wpdb->get_var("SELECT ID FROM {$wpdb->posts} WHERE post_type = 'finvest-order' ORDER BY ID DESC LIMIT 1");
+    $last_id = $last_id ? (int)$last_id : 7891;
+    $new_order_number = $last_id + 1;
+    
+    // Determine payment status
+    $payment_status = 'Manual Order';
+    $failure_reason = '';
+    
+    if (!empty($order_details['result']['code'])) {
+        $code = $order_details['result']['code'];
+        $description = $order_details['result']['description'] ?? '';
+        
+        if (strpos($code, '000.000') === 0) {
+            $payment_status = 'Approved';
+        } else {
+            $payment_status = 'Payment Declined';
+            $failure_reason = $description ?: 'Payment was declined';
+        }
+    }
+    
+    // Create the order post
+    $order_id = wp_insert_post([
+        'post_type' => 'finvest-order',
+        'post_title' => '#' . $new_order_number,
+        'post_status' => 'publish',
+    ]);
+    
+    if ($order_id && !is_wp_error($order_id)) {
+        // Get user IP address
+        $user_ip = $_SERVER['REMOTE_ADDR'] ?? 'admin';
+        
+        // Prepare meta data
+        $meta_data = [
+            'product_details' => $product_details,
+            'order_details' => $order_details,
+            'billing_details' => $billing_details,
+            'finvest_order_status' => $payment_status,
+            'failure_reason' => $failure_reason,
+            'transaction_id' => $order_details['id'] ?? 'unknown',
+            'order_created_time' => current_time('mysql'),
+            'user_ip' => $user_ip,
+            'card_bin' => 'MANUAL',
+            'card_bin_info' => json_encode(['type' => 'manual', 'source' => 'admin']),
+        ];
+        
+        // Save all meta data
+        foreach ($meta_data as $key => $value) {
+            update_post_meta($order_id, $key, $value);
+        }
+        
+        // Handle affiliate assignment
+        if ($affiliate_id) {
+            update_post_meta($order_id, 'select_affiliate_user', $affiliate_id);
+            error_log("Manual affiliate assignment: {$affiliate_id} for order #{$order_id}");
+            
+            // Create commission for approved orders
+            if ($payment_status === 'Approved') {
+                fv_auto_create_commission($order_id, $affiliate_id, $payment_status);
+            }
+        }
+        
+        // Update final title with actual order ID
+        wp_update_post(['ID' => $order_id, 'post_title' => '#' . $order_id]);
+        
+        // Send notifications for approved orders
+        if ($payment_status === 'Approved') {
+            fv_send_order_notification_email($order_id, $payment_status, $failure_reason);
+        }
+        
+        error_log("Manual order #{$order_id} created successfully - Status: {$payment_status}");
+        
+        return $order_id;
+    }
+    
+    error_log('Failed to create manual order');
+    return false;
+}
+
+// Show success message when manual order is created
+add_action('admin_notices', function() {
+    if (isset($_GET['manual_order_created']) && $_GET['manual_order_created'] == '1') {
+        echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Manual order has been created successfully.</p></div>';
+    }
+});
+
 // Performance monitoring and admin notice
 add_action('admin_notices', function () {
     if (current_user_can('manage_options') && get_current_screen()->post_type === 'finvest-order') {
