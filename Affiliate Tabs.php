@@ -38,7 +38,7 @@ function fa_brands_brands_transactions_tab_content(){
 	
 	$affiliate_ids = implode(',', $affiliate_ids);
 // 	print_r($affiliate_ids);
-	
+	//echo '<div id="table-loader" style="position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;">Loading...</div>';
 	echo do_shortcode('[brand-commissions affiliate_id="'.$affiliate_ids.'"]');
 }
 
@@ -73,6 +73,24 @@ function fa_get_brand_commissions($atts){
 	$unpaid_commission = 0;
 	$total_order_amount = 0;
 	$rolling_reserve = 0;
+	// 	$unpaid = array_values(array_filter($results, function($row){
+	// 		return isset($row['status']) && strcasecmp($row['status'], 'unpaid') === 0;
+	// 	}));
+	// 	echo "<pre>";print_r($unpaid);exit;
+	if($affiliate_ids[0]){
+		$affiliate_data = fv_get_affiliate_commission_meta( $affiliate_ids[0] );
+		$ccommission_rate_sale = $affiliate_data['commission_rate_sale'];
+		$commission_rate_type_sale = $affiliate_data['commission_rate_type_sale'];
+	}else{
+		$ccommission_rate_sale = 0;
+		$commission_rate_type_sale = "";
+	}
+	//echo "<pre>";print_r($affiliate_data);
+	//echo "<pre>";print_r($commission_rate_sale);
+	//echo "<pre>";print_r($commission_rate_type_sale);exit;
+	
+	$unpaid_total_usd = 0.0;
+	$paid_total_usd = 0.0;
 	foreach ( $results as $row ) {
 		// do something with $row
 		ob_start();
@@ -89,12 +107,12 @@ function fa_get_brand_commissions($atts){
 		$affiliate_id = $row['affiliate_id'] ?? '';
 		
 		if($status == 'paid'){
-			$approved_paid_commission += (float) $amount;
-			$total_commission_amount += (float) $amount;
+			$approved_paid_commission += (float) $payout_usd;
+			$total_commission_amount += (float) $payout_usd;
 		}
 		if($status == 'unpaid'){
-			$unpaid_commission += (float) $amount;
-			$total_commission_amount += (float) $amount;
+			$unpaid_commission += (float) $payout_usd;
+			$total_commission_amount += (float) $payout_usd;
 		}
 		
 		$user_id = $wpdb->get_var( 
@@ -120,29 +138,40 @@ function fa_get_brand_commissions($atts){
         $p_amount   = $payment_details['amount'] ?? '';
         $message    = $payment_details['result']['description'] ?? '';
         $code       = $payment_details['result']['code'] ?? '';
+		$card_holder= $payment_details['card']['holder'] ?? '';
 		$order_status = get_post_meta($order_id, 'finvest_order_status', true);
 		
 		$usd_order_amount = fa_get_slicewp_commission_meta( $id, '_reference_amount_in_usd', true );
 		
-		if (strtolower($order_status) === 'approved') {
-			$order_amount_usd_numeric = floatval(preg_replace('/[^\d.]/', '', $usd_order_amount));
-			$rolling_reserve_amount = 'USD ' . number_format($order_amount_usd_numeric * 0.10, 2);
-			
-			$rolling_reserve += (float) number_format($order_amount_usd_numeric * 0.10, 2);
-		} else {
-			$rolling_reserve_amount = 'USD 0.00';
-		}
-		
 		if(!$usd_order_amount){
-			$usd_order_amount = convert_to_usd_api($order_amount, $p_currency);
+			$usd_order_amount = fa_convert_to_usd_api($order_amount, $p_currency);
 		}
 		else{
 			$usd_order_amount = 'USD '.round($usd_order_amount, 2);
 		}
 		
+		$order_amount_usd_numeric = floatval(preg_replace('/[^\d.]/', '', $usd_order_amount));
+		$rolling_reserve_amount = 'USD ' . number_format($order_amount_usd_numeric * 0.10, 2);
+		
+		$rolling_reserve += (float) number_format($order_amount_usd_numeric * 0.10, 2);
+		
 		$usd_amount_order = str_replace(' ', '', $usd_order_amount);
 		$usd_amount_order = str_replace('USD', '', $usd_order_amount);
 		
+		// Get brand commission rate from database
+		$commission_rate = $wpdb->get_var( 
+			$wpdb->prepare( 
+				"SELECT meta_value FROM {$wpdb->prefix}slicewp_affiliate_meta WHERE slicewp_affiliate_id = %d AND meta_key = %s", 
+				$affiliate_id,
+				'commission_rate_sale'
+			) 
+		);
+		
+		// Convert commission rate to decimal (e.g., 65 -> 0.65)
+		$commission_rate_decimal = $commission_rate ? (float)$commission_rate / 100 : 0;
+		
+		// Calculate payout USD based on commission rate and USD order amount
+		$payout_usd = $order_amount_usd_numeric * $commission_rate_decimal;
 		
 		// summary variables
 		$total_order_amount += (float) $usd_amount_order;
@@ -217,6 +246,12 @@ function fa_get_brand_commissions($atts){
         } else {
             $message = '<span class="error-message">' . esc_html($message) . '</span>';
         }
+		if (strcasecmp($status, 'unpaid') === 0) {
+			$unpaid_total_usd += $order_amount_usd_numeric; // sum numeric USD
+		}
+		if (strcasecmp($status, 'paid') === 0) {
+			$paid_total_usd += $order_amount_usd_numeric; // sum numeric USD for PAID orders
+		}
 		
 		$action = '<form method="post">
 						<input type="hidden" name="security" value="'. wp_create_nonce('fa_ajax_nonce') . '">
@@ -242,10 +277,11 @@ function fa_get_brand_commissions($atts){
 		echo '<td class="all">' . esc_html($country) . '</td>';
 		echo '<td class="all">' . $p_currency . ' ' . esc_html(round($order_amount, 2)) . '</td>';
 		echo '<td class="all">' . esc_html($date) . '</td>';
+		echo '<td>' . esc_html($card_holder) . '</td>';
         echo '<td>' . esc_html($phone) . '</td>';
         echo '<td>#' . esc_html($order_id) . '</td>';
 		        echo '<td>' . esc_html($usd_order_amount) . '</td>';
-		echo '<td>USD ' . esc_html(round($amount, 2)) . '</td>';
+		echo '<td>USD ' . esc_html(round($payout_usd, 2)) . '</td>';
 		echo '<td>' . esc_html($rolling_reserve_amount) . '</td>';
         echo '<td class="all"> <span class="transaction-status '.$status.'">' . esc_html($status) . '</span></td>';
         echo '<td>' . esc_html($user_ip) . '</td>';
@@ -260,24 +296,35 @@ function fa_get_brand_commissions($atts){
 		
    		$table_rows .= $t_row; 
 	}
-	
+	$unpaid_total_formatted = '' . number_format($unpaid_total_usd, 2);
+	$unpaid_ten_percent_usd       = $unpaid_total_usd * 0.10;
+	$unpaid_ten_percent_formatted = number_format($unpaid_ten_percent_usd, 2);
+	// If you want the label:
+	$unpaid_ten_percent_labeled   = '' . $unpaid_ten_percent_formatted;
+	$paid_total_formatted = '' . number_format($paid_total_usd, 2);
 	ob_start();
 	
+	echo '<input type="hidden" name="commission_id_rate" id="commission_id_rate" value="'.$ccommission_rate_sale.'"><span class="sum_card"><span class="icn_sum"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M3.5 4v13.5a3 3 0 0 0 3 3H20"/><path d="m6.5 15l4.5-4.5l3.5 3.5L20 8.5"/></g></svg></span>Summary Report</span>';
 	echo '<div class="summary_wrap">';
 	echo '<div class="card total-order-amount">
+		<span class="icn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 20 20"><path fill="currentColor" d="M6 13h9c.55 0 1 .45 1 1s-.45 1-1 1H5c-.55 0-1-.45-1-1V4H2c-.55 0-1-.45-1-1s.45-1 1-1h3c.55 0 1 .45 1 1v2h13l-4 7H6v1zm-.5 3c.83 0 1.5.67 1.5 1.5S6.33 19 5.5 19S4 18.33 4 17.5S4.67 16 5.5 16zm9 0c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5z"/></svg></span>
       <h4>Total Order Amount</h4>
       <p>$</p>
     </div>
-    <div class="card approved-unpaid_payout">
-      <h4>Total Approved & Unpaid Payout USD</h4>
-      <p>$</p>
-    </div>
     <div class="card rolling_reserve">
+		<span class="icn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path fill="currentColor" d="m466.5 83.7l-192-80a48.15 48.15 0 0 0-36.9 0l-192 80C27.7 91.1 16 108.6 16 128c0 198.5 114.5 335.7 221.5 380.3c11.8 4.9 25.1 4.9 36.9 0C360.1 472.6 496 349.3 496 128c0-19.4-11.7-36.9-29.5-44.3zM256.1 446.3l-.1-381l175.9 73.3c-3.3 151.4-82.1 261.1-175.8 307.7z"/></svg></span>
       <h4>Rolling Reserve 10% (120 days)</h4>
       <p>$</p>
     </div>
     <div class="card final_payout">
+		<span class="icn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M12 21a9 9 0 1 0 0-18a9 9 0 0 0 0 18m-.232-5.36l5-6l-1.536-1.28l-4.3 5.159l-2.225-2.226l-1.414 1.414l3 3l.774.774z" clip-rule="evenodd"/></svg></span>
       <h4>Final Payout Amount</h4>
+      <p>$</p>
+    </div>
+	
+    <div class="card approved-unpaid_payout">
+		<span class="icn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10s10-4.5 10-10S17.5 2 12 2zm3.5 12c-.3.5-.9.6-1.4.4l-2.6-1.5c-.3-.2-.5-.5-.5-.9V7c0-.6.4-1 1-1s1 .4 1 1v4.4l2.1 1.2c.5.3.6.9.4 1.4z"/></svg></span>
+      <h4>Total paid</h4>
       <p>$</p>
     </div>
     ';
@@ -297,12 +344,16 @@ function fa_get_brand_commissions($atts){
 .vpn-geo { color: #2271b1; font-weight: 500; }
 .card-bin { color: #50575e; font-weight: 600; font-family: monospace; }
 .bank-name { color: #2271b1; font-weight: 400; font-style: italic; font-size: 11px; }
+
 	</style>';
-	
-	echo '<div class="fa-table-wrapp"><div id="filters" style="margin-bottom: 10px;">
-  <label>From: <input type="date" id="min-date"></label>
-  <label>To: <input type="date" id="max-date"></label>
-</div><table class="table dt-responsive transactions-table" border="1" cellpadding="8" cellspacing="0">';
+	//echo '<div id="table-loader" style="position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;">Loading...</div>';
+
+	echo '<span class="sum_filter"><span class="icn_fun"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path fill="currentColor" d="M296 464a23.88 23.88 0 0 1-7.55-1.23L208.3 436.1a23.92 23.92 0 0 1-16.3-22.78V294.11a.44.44 0 0 0-.09-.13L23.26 97.54A30 30 0 0 1 46.05 48H466a30 30 0 0 1 22.79 49.54L320.09 294a.77.77 0 0 0-.09.13V440a23.93 23.93 0 0 1-24 24Z"/></svg></span>Professional Filter System</span>';
+	echo '<div class="fa-table-wrapp"><div class="filters_all"><div id="filters" style="margin-bottom: 10px;">
+	<label class="dt_range"><span class="dt_icn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 20 20"><path fill="currentColor" d="M1 4c0-1.1.9-2 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4zm2 2v12h14V6H3zm2-6h2v2H5V0zm8 0h2v2h-2V0zM5 9h2v2H5V9zm0 4h2v2H5v-2zm4-4h2v2H9V9zm0 4h2v2H9v-2zm4-4h2v2h-2V9zm0 4h2v2h-2v-2z"/></svg></span>Date Range Selection</label>
+  <label>From Date: <input type="date" id="min-date"></label>
+  <label>To Date: <input type="date" id="max-date"></label>
+</div><div id="filters_control" style="margin-bottom: 10px;"><label class="fil_con"><span class="control_icn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M5 12V4m14 16v-3M5 20v-4m14-3V4m-7 3V4m0 16v-9"/><circle cx="5" cy="14" r="2"/><circle cx="12" cy="9" r="2"/><circle cx="19" cy="15" r="2"/></g></svg></span>Filter Control</label></div></div><div class="main_tbl"><table style="display:none;" class="table dt-responsive transactions-table" border="1" cellpadding="8" cellspacing="0">';
     
     // Table Header
     echo '<thead><tr>';
@@ -314,6 +365,7 @@ function fa_get_brand_commissions($atts){
 	echo '<th class="all">GEO</th>';
 	echo '<th class="all">Order Amount</th>';
 	echo '<th class="all">Date</th>';
+	echo '<th>Card Holder Name</th>';
     echo '<th>Phone</th>';
     echo '<th>Order ID</th>';
 	echo '<th>Order Amount USD</th>';
@@ -337,6 +389,8 @@ function fa_get_brand_commissions($atts){
 		
  	echo '</tbody>';
     echo '</table></div>';
+	$unpaid_total_formatted = 'USD ' . number_format($unpaid_total_usd, 2);
+	//echo '<p>Total unpaid amount: ' . $unpaid_total_formatted . '</p>';
 		
 	$output = ob_get_contents();
 	ob_end_clean();
@@ -507,7 +561,7 @@ function fa_get_affilate_subbrands(){
 			foreach($transactions as $t){
 				$data[$t['status']][] = $t;
 				if($t['status'] == 'unpaid' || $t['status'] == 'paid'){
-					$payout += $t['amount'];
+					$payout += fa_calculate_payout_usd($t, $row['id']);
 				}
 			}
 			
@@ -681,12 +735,43 @@ $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
     return false;
 });
 		}
+			
+
+
 
 $(document).ready(function () {
 	if($('table').hasClass('transactions-table')){
+	
     const table = $('.fa-table-wrapp table.transactions-table').DataTable({
-        dom: 'Blfrtip',
-        buttons: ['csvHtml5'],
+        dom: '<"top"Blfip>rt<"bottom"ip>',  
+        buttons: [
+				{
+					extend: 'csvHtml5',
+					text: '<svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21 14a1 1 0 0 0-1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 0-2 0v4a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-4a1 1 0 0 0-1-1Zm-9.71 1.71a1 1 0 0 0 .33.21a.94.94 0 0 0 .76 0a1 1 0 0 0 .33-.21l4-4a1 1 0 0 0-1.42-1.42L13 12.59V3a1 1 0 0 0-2 0v9.59l-2.29-2.3a1 1 0 1 0-1.42 1.42Z"/></svg><span class="btn-label">Export CSV</span>',
+					className: 'btn btn-primary exp'
+				},
+				{
+					text: 'Reset Filters',
+					className: 'btn btn-secondary',
+					action: function (e, dt) {
+						const $container = $('#filters_control');
+						$container.find('select').val('');
+						$('#min-date, #max-date').val('');
+						$(dt.table().container()).find('input[type="search"]').val('');
+						dt.search('');
+						dt.columns().search('');
+						dt.draw();
+						if (typeof updateFilteredTotal === 'function') updateFilteredTotal(dt);
+					}
+				},
+				{
+				  text: 'Refresh Table',
+				  className: 'btn btn-outline-secondary',
+				  action: function () {
+					location.reload(); // reloads the page
+				  }
+				}
+			],
         order: [[0, 'desc']],
         responsive: true,
         pageLength: 20,
@@ -697,15 +782,20 @@ $(document).ready(function () {
             { targets: 2, responsivePriority: 1, className: 'all' },
             { targets: 3, responsivePriority: 1, className: 'all' },
             { targets: 4, responsivePriority: 1, className: 'all' },
-			{ targets: 13, orderable: false },
-			{ targets: 5, orderable: false }
+			{ targets: 14, orderable: false },
+			{ targets: 5, orderable: false },
+			{ targets: 8, orderable: false }
         ],
         initComplete: function () {
-            // Dropdown filter for "Status" column (index 13)
-            this.api().columns(13).every(function () {
+			const filterContainer = $('#filters_control');
+			$(this).css('display', 'block');
+			$('#table-loader').fadeOut();
+            // Dropdown filter for "Status" column (index 14)
+            this.api().columns(14).every(function () {
                 const column = this;
+				const wrapper = $('<div class="filter-item"><label>Status: </label></div>').appendTo(filterContainer);
                 const select = $('<select><option value="">All Status</option></select>')
-                    .appendTo($(column.header()).empty())
+                    .appendTo(wrapper)
                     .on('change', function () {
                         const val = $.fn.dataTable.util.escapeRegex($(this).val());
                         column.search(val ? '^' + val + '$' : '', true, false).draw();
@@ -713,7 +803,7 @@ $(document).ready(function () {
 
                 column.data().unique().sort().each(function (d) {
                     if (d) {
-                        const text = $('<div>').html(d).text(); // strip HTML
+                        const text = $('<div>').html(d).text();
                         select.append('<option value="' + text + '">' + text + '</option>');
                     }
                 });
@@ -721,8 +811,9 @@ $(document).ready(function () {
 			
 			this.api().columns(1).every(function () {
                 const column = this;
+				const wrapper = $('<div class="filter-item"><label>Brand: </label></div>').appendTo(filterContainer);
                 const select = $('<select><option value="">All Brands</option></select>')
-                    .appendTo($(column.header()).empty())
+                    .appendTo(wrapper)
                     .on('change', function () {
                         const val = $.fn.dataTable.util.escapeRegex($(this).val());
                         column.search(val ? '^' + val + '$' : '', true, false).draw();
@@ -730,7 +821,7 @@ $(document).ready(function () {
 
                 column.data().unique().sort().each(function (d) {
                     if (d) {
-                        const text = $('<div>').html(d).text(); // strip HTML
+                        const text = $('<div>').html(d).text();
                         select.append('<option value="' + text + '">' + text + '</option>');
                     }
                 });
@@ -738,8 +829,9 @@ $(document).ready(function () {
 			
 			this.api().columns(5).every(function () {
                 const column = this;
+				const wrapper = $('<div class="filter-item"><label>Geo/Location: </label></div>').appendTo(filterContainer);
                 const select = $('<select><option value="">GEO</option></select>')
-                    .appendTo($(column.header()).empty())
+                    .appendTo(wrapper)
                     .on('change', function () {
                         const val = $.fn.dataTable.util.escapeRegex($(this).val());
                         column.search(val ? '^' + val + '$' : '', true, false).draw();
@@ -747,7 +839,7 @@ $(document).ready(function () {
 
                 column.data().unique().sort().each(function (d) {
                     if (d) {
-                        const text = $('<div>').html(d).text(); // strip HTML
+                        const text = $('<div>').html(d).text();
                         select.append('<option value="' + text + '">' + text + '</option>');
                     }
                 });
@@ -772,46 +864,83 @@ $(document).ready(function () {
 	
 	function updateFilteredTotal(table) {
 		const total_order_amount_usd = table
-			.column(10, { search: 'applied' }) // only filtered rows
+			.column(10, { search: 'applied' })
 			.data()
 			.reduce(function (sum, val) {
-				// Remove any HTML and convert to float
 				const num = parseFloat($('<div>').html(val).text().replace(/[^0-9.-]+/g, ''));
 				return sum + (isNaN(num) ? 0 : num);
 			}, 0);
 
-		$('.summary_wrap .card.total-order-amount p').text('$' + total_order_amount_usd.toFixed(2));
+		//$('.summary_wrap .card.total-order-amount p').text('$' + total_order_amount_usd.toFixed(2));
 		
 		const total_approved_unpaid_payout = table
-			.column(11, { search: 'applied' }) // only filtered rows
+			.column(11, { search: 'applied' })
 			.data()
 			.reduce(function (sum, val) {
-				// Remove any HTML and convert to float
 				const num = parseFloat($('<div>').html(val).text().replace(/[^0-9.-]+/g, ''));
 				return sum + (isNaN(num) ? 0 : num);
 			}, 0);
 
-		$('.summary_wrap .card.approved-unpaid_payout p').text('$' + total_approved_unpaid_payout.toFixed(2));
+		//$('.summary_wrap .card.approved-unpaid_payout p').text('$' + total_approved_unpaid_payout.toFixed(2));
 		
 		const total_rolling_reserve = table
-			.column(12, { search: 'applied' }) // only filtered rows
+			.column(12, { search: 'applied' })
 			.data()
 			.reduce(function (sum, val) {
-				// Remove any HTML and convert to float
 				const num = parseFloat($('<div>').html(val).text().replace(/[^0-9.-]+/g, ''));
 				return sum + (isNaN(num) ? 0 : num);
 			}, 0);
 
-		$('.summary_wrap .card.rolling_reserve p').text('$' + total_rolling_reserve.toFixed(2));
+		//$('.summary_wrap .card.rolling_reserve p').text('$' + total_rolling_reserve.toFixed(2));
 		
-		const final_payout = total_approved_unpaid_payout.toFixed(2) - total_rolling_reserve.toFixed(2);
-		$('.summary_wrap .card.final_payout p').text('$' + final_payout);
+		const final_payout = total_approved_unpaid_payout - total_rolling_reserve;
+		//$('.summary_wrap .card.final_payout p').text('$' + final_payout.toFixed(2));
 		
 		
+		/*** NEW: calculate total of UNPAID orders only ***/
+		let unpaid_total = 0;
+		let paid_total = 0;
+		
+		table.rows({ search: 'applied' }).every(function () {
+			const row = this.data();
+			
+			// Get the raw text inside the span (status column 14)
+			const statusText = $('<div>').html(row[14]).text().trim().toLowerCase();
+
+			if (statusText === 'unpaid') {
+				//console.log(row[11]);
+				// Column 11 already looks like a number string
+				const num = parseFloat(row[11]);
+				unpaid_total += isNaN(num) ? 0 : num;
+			}
+			if (statusText === 'paid') {
+				//console.log(row[12]);
+				// Column 11 already looks like a number string
+				const clean = $('<div>').html(row[12]).text().replace(/[^0-9.\-]+/g, '');
+    			const num   = parseFloat(clean);
+				paid_total += isNaN(num) ? 0 : num;
+			}
+		});
+
+		console.log("Final unpaid total (numeric):", unpaid_total);
+		$('.summary_wrap .card.total-order-amount p').text('$' + unpaid_total.toFixed(2));
+		
+		const unpaid_ten_percent = unpaid_total * 0.10;
+		console.log(unpaid_ten_percent);
+		$('.summary_wrap .card.rolling_reserve p').text('$' + unpaid_ten_percent.toFixed(2));
+		
+		var commission_id_rate = $('#commission_id_rate').val();
+		var commission_percent = parseFloat(commission_id_rate) || 0;
+		var commission_value = unpaid_total * (commission_percent / 100);
+		console.log(commission_value);
+		$('.summary_wrap .card.final_payout p').text('$' + commission_value.toFixed(2));
+		
+		console.log(paid_total);
+		$('.summary_wrap .card.approved-unpaid_payout p').text('$' + paid_total.toFixed(2));
 	}
 
-	
 });
+
 
 // 			}
 			
@@ -842,7 +971,7 @@ add_action('init', function(){
 				$data[$t['status']][] = $t;
 				
 				if($t['status'] == 'unpaid' || $t['status'] == 'paid'){
-					$payout += $t['amount'];
+					$payout += fa_calculate_payout_usd($t, 36);
 				}
 			}
 			
@@ -879,4 +1008,58 @@ function fa_affiliate_transactions($affiliate_id){
 	);
 	
 	return $results;
+}
+
+// Calculate payout USD for a transaction based on brand commission rate
+function fa_calculate_payout_usd($transaction, $affiliate_id) {
+	global $wpdb;
+	
+	// Get brand commission rate from database
+	$commission_rate = $wpdb->get_var( 
+		$wpdb->prepare( 
+			"SELECT meta_value FROM {$wpdb->prefix}slicewp_affiliate_meta WHERE slicewp_affiliate_id = %d AND meta_key = %s", 
+			$affiliate_id,
+			'commission_rate_sale'
+		) 
+	);
+	
+	// Convert commission rate to decimal (e.g., 65 -> 0.65)
+	$commission_rate_decimal = $commission_rate ? (float)$commission_rate / 100 : 0;
+	
+	// Get USD order amount
+	$usd_order_amount = fa_get_slicewp_commission_meta( $transaction['id'], '_reference_amount_in_usd', true );
+	
+	if(!$usd_order_amount){
+		// If no USD amount stored, convert from original currency
+		$order_amount = $transaction['reference_amount'] ?? 0;
+		$usd_order_amount = fa_convert_to_usd_api($order_amount, 'EUR'); // Default to EUR if currency not available
+	}
+	
+	// Calculate payout USD based on commission rate and USD order amount
+	$payout_usd = $usd_order_amount * $commission_rate_decimal;
+	
+	return $payout_usd;
+}
+
+// Function to convert currency to USD using exchange rate API
+function fa_convert_to_usd_api($amount, $from_currency) {
+	// If already USD, return as is
+	if (strtoupper($from_currency) === 'USD') {
+		return (float)$amount;
+	}
+	
+	// For now, use a simple conversion (you can replace this with a real API call)
+	// Common exchange rates (you should use a real API in production)
+	$exchange_rates = [
+		'EUR' => 1.13, // 1 EUR = 1.13 USD (approximate)
+		'GBP' => 1.27, // 1 GBP = 1.27 USD (approximate)
+		'CAD' => 0.79, // 1 CAD = 0.79 USD (approximate)
+		'AUD' => 0.73, // 1 AUD = 0.73 USD (approximate)
+		'JPY' => 0.009, // 1 JPY = 0.009 USD (approximate)
+		'MYR' => 0.24, // 1 MYR = 0.24 USD (approximate)
+	];
+	
+	$rate = $exchange_rates[strtoupper($from_currency)] ?? 1.0;
+	
+	return (float)$amount * $rate;
 }
