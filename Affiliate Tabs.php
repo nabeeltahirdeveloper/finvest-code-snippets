@@ -275,7 +275,9 @@ function fa_get_brand_commissions($atts){
         echo '<td class="all">' . esc_html($last_name) . '</td>';
         echo '<td class="all">' . esc_html($email) . '</td>';
 		echo '<td class="all">' . esc_html($country) . '</td>';
-		echo '<td class="all">' . $p_currency . ' ' . esc_html(round($order_amount, 2)) . '</td>';
+		// Use p_amount for display if order_amount seems incorrect (like showing 1 instead of actual amount)
+		$display_amount = ($order_amount > 0 && $order_amount < 10 && $p_amount > 10) ? $p_amount : $order_amount;
+		echo '<td class="all">' . $p_currency . ' ' . esc_html(round($display_amount, 2)) . '</td>';
 		echo '<td class="all">' . esc_html($date) . '</td>';
 		echo '<td>' . esc_html($card_holder) . '</td>';
         echo '<td>' . esc_html($phone) . '</td>';
@@ -1056,7 +1058,6 @@ function fa_convert_to_usd_api($amount, $from_currency) {
 		'CAD' => 0.79, // 1 CAD = 0.79 USD (approximate)
 		'AUD' => 0.73, // 1 AUD = 0.73 USD (approximate)
 		'JPY' => 0.009, // 1 JPY = 0.009 USD (approximate)
-		'MYR' => 0.24, // 1 MYR = 0.24 USD (approximate)
 	];
 	
 	$rate = $exchange_rates[strtoupper($from_currency)] ?? 1.0;

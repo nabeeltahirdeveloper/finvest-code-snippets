@@ -321,7 +321,8 @@ add_shortcode('fv-billing-details-form', function () {
                             <option value="lt">Lithuania</option>
                             <option value="lu">Luxembourg</option>
                             <option value="lv">Latvia</option>
-                            <option value="mc">Monaco</option>
+                            <option value="mr">Malaysia</option>
+							<option value="mc">Monaco</option>
                             <option value="md">Moldova</option>
                             <option value="me">Montenegro</option>
                             <option value="mk">North Macedonia</option>
@@ -2380,15 +2381,15 @@ add_action('init', function () {
         // Email validation
         if (!is_email($_POST['email'])) {
             // Schedule async notification
-            wp_schedule_single_event(time(), 'fv_async_failure_notification', [
-                [
-                    'timestamp' => current_time('mysql'),
-                    'error_type' => 'INVALID_EMAIL_FORMAT',
-                    'attempted_email' => $_POST['email'],
-                    'submitted_data' => $_POST,
-                    'user_ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-                ]
-            ]);
+//             wp_schedule_single_event(time(), 'fv_async_failure_notification', [
+//                 [
+//                     'timestamp' => current_time('mysql'),
+//                     'error_type' => 'INVALID_EMAIL_FORMAT',
+//                     'attempted_email' => $_POST['email'],
+//                     'submitted_data' => $_POST,
+//                     'user_ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+//                 ]
+//             ]);
 
             wp_safe_redirect(add_query_arg('form_error', 'invalid_email', $_SERVER['HTTP_REFERER']));
             exit;
