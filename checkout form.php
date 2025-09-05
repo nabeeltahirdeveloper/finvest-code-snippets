@@ -251,12 +251,12 @@ add_shortcode('fv-billing-details-form', function () {
                     <div class="form-group first_name">
                         <label for="first_name">First Name <span class="required">*</span></label>
                         <input type="text" id="first_name" name="first_name" placeholder="First Name"
-                               value="<?php echo esc_attr($_SESSION['fv_checkout']['first_name'] ?? ''); ?>" required>
+                               value="<?php echo esc_attr($_SESSION['fv_checkout']['first_name'] ?? ''); ?>" pattern="^[A-Za-z\s]+$" title="Only letters and spaces allowed" required>
                     </div>
                     <div class="form-group last_name">
                         <label for="last_name">Last Name <span class="required">*</span></label>
                         <input type="text" id="last_name" name="last_name" placeholder="Last Name"
-                               value="<?php echo esc_attr($_SESSION['fv_checkout']['last_name'] ?? ''); ?>" required>
+                               value="<?php echo esc_attr($_SESSION['fv_checkout']['last_name'] ?? ''); ?>" pattern="^[A-Za-z\s]+$" title="Only letters and spaces allowed" required>
                     </div>
                     <div class="form-group street_address">
                         <label for="street_address1">Street address <span class="required">*</span></label>
@@ -416,6 +416,22 @@ add_shortcode('fv-billing-details-form', function () {
                         var billingTab = document.querySelector('.billing-details-tab');
                         var paymentTab = document.querySelector('.make-payment-tab');
                         var editDetails = document.querySelector('.edit-details');
+                        // Enforce letters-only for billing first/last name as user types
+                        var firstNameInput = document.getElementById('first_name');
+                        var lastNameInput = document.getElementById('last_name');
+                        function enforceLettersOnly(input) {
+                            if (!input) return;
+                            input.addEventListener('keydown', function(e) {
+                                if (e.key && /[0-9]/.test(e.key)) {
+                                    e.preventDefault();
+                                }
+                            });
+                            input.addEventListener('input', function() {
+                                this.value = this.value.replace(/[^A-Za-z\s]/g, '');
+                            });
+                        }
+                        enforceLettersOnly(firstNameInput);
+                        enforceLettersOnly(lastNameInput);
 
                         // Check if this is a fresh page load (not form submission)
                         var isFormSubmission = window.location.search.includes('form_submitted=true') ||
@@ -484,6 +500,16 @@ add_shortcode('fv-billing-details-form', function () {
                                     return false;
                                 }
 
+                                // Enforce letters-only for names on client side too
+                                var nameRegex = /^[A-Za-z\s]+$/;
+                                var firstName = formData.get('first_name') || '';
+                                var lastName = formData.get('last_name') || '';
+                                if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+                                    alert('First name and last name may only contain letters and spaces.');
+                                    e.preventDefault();
+                                    return false;
+                                }
+
                                 // Set flag to indicate form was just submitted
                                 sessionStorage.setItem('fv_form_just_submitted', 'true');
 
@@ -536,6 +562,20 @@ add_shortcode('fv-billing-details-form', function () {
 
                         function addPaymentValidation() {
                             var paymentButton = document.querySelector('.wpwl-button.wpwl-button-pay');
+                            
+                            // Enforce letters-only on card holder input as user types
+                            var cardHolderInputInit = document.querySelector('.wpwl-control.wpwl-control-cardHolder');
+                            if (cardHolderInputInit) {
+                                try {
+                                    cardHolderInputInit.setAttribute('pattern', '^[A-Za-z\\s]+$');
+                                    cardHolderInputInit.setAttribute('title', 'Only letters and spaces allowed');
+                                    cardHolderInputInit.addEventListener('input', function() {
+                                        this.value = this.value.replace(/[^A-Za-z\s]/g, '');
+                                    });
+                                } catch (err) {
+                                    // no-op
+                                }
+                            }
                             
                             if (paymentButton) {
                                 paymentButton.addEventListener('click', function(e) {
@@ -2395,6 +2435,13 @@ add_action('init', function () {
             exit;
         }
 
+        // Names validation: only letters and spaces
+        $name_regex = '/^[A-Za-z\s]+$/';
+        if (!preg_match($name_regex, $_POST['first_name'] ?? '') || !preg_match($name_regex, $_POST['last_name'] ?? '')) {
+            wp_safe_redirect(add_query_arg('form_error', 'invalid_name', $_SERVER['HTTP_REFERER']));
+            exit;
+        }
+
         // Terms validation
         if (empty($_POST['terms'])) {
             // Schedule async notification
@@ -2494,6 +2541,9 @@ add_action('wp_head', function () {
                 break;
             case 'invalid_email':
                 $error_message = 'Please enter a valid email address.';
+                break;
+            case 'invalid_name':
+                $error_message = 'First name and last name may only contain letters and spaces.';
                 break;
             case 'terms_required':
                 $error_message = 'You must accept the terms and conditions to proceed.';
@@ -3749,11 +3799,11 @@ function fv_add_manual_order_modal() {
                     <h3>Customer Information</h3>
                     <div class="form-row half">
                         <label for="first_name">First Name *</label>
-                        <input type="text" id="first_name" name="first_name" required>
+                        <input type="text" id="first_name" name="first_name" pattern="^[A-Za-z\s]+$" title="Only letters and spaces allowed" required>
                     </div>
                     <div class="form-row half">
                         <label for="last_name">Last Name *</label>
-                        <input type="text" id="last_name" name="last_name" required>
+                        <input type="text" id="last_name" name="last_name" pattern="^[A-Za-z\s]+$" title="Only letters and spaces allowed" required>
                     </div>
                     <div class="form-row">
                         <label for="email">Email *</label>
