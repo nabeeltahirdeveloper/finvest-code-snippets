@@ -171,7 +171,7 @@ function start_session_if_not_started()
                     integrity="true" crossorigin="anonymous"></script>
 
             <form action="<?php echo esc_url($shopperResultUrl); ?>" class="paymentWidgets"
-                  data-brands="VISA MASTER"><span>Form Loading...</span></form>
+                  data-brands="VISA MASTER MAESTRO"><span>Form Loading...</span></form>
 
         <?php } ?>
 
@@ -321,7 +321,7 @@ add_shortcode('fv-billing-details-form', function () {
                             <option value="lt">Lithuania</option>
                             <option value="lu">Luxembourg</option>
                             <option value="lv">Latvia</option>
-                            <option value="mr">Malaysia</option>
+                            <option value="my">Malaysia</option>
 							<option value="mc">Monaco</option>
                             <option value="md">Moldova</option>
                             <option value="me">Montenegro</option>
@@ -752,7 +752,7 @@ add_shortcode('fv-billing-details-form', function () {
                                         integrity="<?php echo esc_attr($integrity); ?>"></script>
 
                                 <form action="<?php echo esc_url($shopperResultUrl); ?>" class="paymentWidgets"
-                                      data-brands="VISA MASTER"><span>Form Loading...</span></form>
+                                      data-brands="VISA MASTER MAESTRO"><span>Form Loading...</span></form>
                                 <?php
                             }
                         } else {
@@ -1105,7 +1105,7 @@ add_shortcode('fv-checkout', function () {
                             integrity="<?php echo esc_attr($integrity); ?>"></script>
 
                     <form action="<?php echo esc_url($shopperResultUrl); ?>" class="paymentWidgets"
-                          data-brands="VISA MASTER"></form>
+                          data-brands="VISA MASTER MAESTRO"></form>
 
                 <?php } ?>
             </div>
@@ -2218,7 +2218,7 @@ function fv_solidpayment_form_display($atts)
                         crossorigin="anonymous" integrity="<?php echo esc_attr($integrity); ?>"></script>
 
                 <form action="<?php echo esc_url($shopperResultUrl); ?>" class="paymentWidgets"
-                      data-brands="VISA MASTER"><span>Form Loading...</span></form>
+                      data-brands="VISA MASTER MAESTRO"><span>Form Loading...</span></form>
 
             <?php } ?>
         </div>
@@ -2978,23 +2978,6 @@ add_action('init', function () {
     }
 });
 
-// Add admin notice for the test function
-add_action('admin_notices', function () {
-    if (current_user_can('manage_options')) {
-        $current_url = admin_url('edit.php?post_type=finvest-order');
-        echo '<div class="notice notice-success is-dismissible">';
-        echo '<p><strong>🎉 SliceWP Affiliate Tracking Fixed!</strong> Declined payments now appear in SliceWP dashboard.</p>';
-        echo '<p><strong>Debug & Test Links:</strong></p>';
-        echo '<p>';
-        echo '<a href="' . home_url('?test_affiliate_tracking=1') . '" target="_blank" class="button">🔍 Debug Affiliate Tracking</a> ';
-        echo '<a href="' . home_url('?test_manual_commission=1') . '" target="_blank" class="button">🔧 Manual Commission Test</a> ';
-        echo '<a href="' . home_url('?test_order_system=success') . '" target="_blank" class="button">✅ Test Success</a> ';
-        echo '<a href="' . home_url('?test_order_system=failed') . '" target="_blank" class="button">❌ Test Failure</a>';
-        echo '</p>';
-        echo '<p><small><strong>Use Debug test first</strong> to see detailed information about what\'s happening, then Manual test to isolate issues.</small></p>';
-        echo '</div>';
-    }
-});
 
 // OPTIMIZED: Fast order creation function with minimal overhead
 function create_finvest_order_post_fast($order_details)
