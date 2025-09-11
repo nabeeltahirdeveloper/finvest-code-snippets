@@ -433,6 +433,17 @@ add_shortcode('fv-billing-details-form', function () {
                         enforceLettersOnly(firstNameInput);
                         enforceLettersOnly(lastNameInput);
 
+                        // Realtime sanitization: remove dots from phone as user types
+
+                        var phoneInput = document.getElementById('phone');
+                        if (phoneInput) {
+                            phoneInput.addEventListener('input', function () {
+                                if (this.value.indexOf('.') !== -1) {
+                                    this.value = this.value.replace(/\./g, '');
+                                }
+                            });
+                        }
+
                         // Check if this is a fresh page load (not form submission)
                         var isFormSubmission = window.location.search.includes('form_submitted=true') ||
                             (window.performance && window.performance.navigation.type === 1); // Check if it's a form resubmission
@@ -506,6 +517,22 @@ add_shortcode('fv-billing-details-form', function () {
                                 var lastName = formData.get('last_name') || '';
                                 if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
                                     alert('First name and last name may only contain letters and spaces.');
+                                    e.preventDefault();
+                                    return false;
+                                }
+
+                                // Email cannot start or end with a dot
+                                var email = (formData.get('email') || '').trim();
+                                if (email.startsWith('.') || email.endsWith('.')) {
+                                    alert('Email cannot start or end with a dot.');
+                                    e.preventDefault();
+                                    return false;
+                                }
+
+                                // Phone number cannot contain dots
+                                var phone = (formData.get('phone') || '').trim();
+                                if (phone.indexOf('.') !== -1) {
+                                    alert('Phone number cannot contain dots.');
                                     e.preventDefault();
                                     return false;
                                 }
@@ -2419,7 +2446,12 @@ add_action('init', function () {
         }
 
         // Email validation
-        if (!is_email($_POST['email'])) {
+        $__email = trim($_POST['email']);
+        if (strpos($__email, '.') === 0 || substr($__email, -1) === '.') {
+            wp_safe_redirect(add_query_arg('form_error', 'invalid_email', $_SERVER['HTTP_REFERER']));
+            exit;
+        }
+        if (!is_email($__email)) {
             // Schedule async notification
 //             wp_schedule_single_event(time(), 'fv_async_failure_notification', [
 //                 [
@@ -2432,6 +2464,13 @@ add_action('init', function () {
 //             ]);
 
             wp_safe_redirect(add_query_arg('form_error', 'invalid_email', $_SERVER['HTTP_REFERER']));
+            exit;
+        }
+
+        // Phone validation: no dots allowed
+        $__phone = isset($_POST['phone']) ? (string) $_POST['phone'] : '';
+        if (strpos($__phone, '.') !== false) {
+            wp_safe_redirect(add_query_arg('form_error', 'invalid_phone', $_SERVER['HTTP_REFERER']));
             exit;
         }
 
